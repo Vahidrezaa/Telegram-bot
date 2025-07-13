@@ -868,7 +868,7 @@ async def keep_alive():
     while True:
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get("https://your-app-name.onrender.com/health") as resp:
+                async with session.get("improved-robot-production.up.railway.app") as resp:
                     if resp.status == 200:
                         logger.info("✅ Keep-alive ping sent successfully")
                     else:
