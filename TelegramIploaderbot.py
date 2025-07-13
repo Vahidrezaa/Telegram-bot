@@ -572,6 +572,7 @@ async def send_category_files(message: Message, context: ContextTypes.DEFAULT_TY
             # زمان‌بندی برای حذف خودکار
             bot_manager.delete_tasks[user_id] = asyncio.create_task(
                 delete_messages_after_delay(context, chat_id, sent_messages, timer)
+            )
         else:
             await message.reply_text("✅ فایل‌ها با موفقیت ارسال شدند.")
     except Exception as e:
