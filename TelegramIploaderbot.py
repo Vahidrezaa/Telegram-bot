@@ -433,7 +433,7 @@ bot_manager = BotManager()
 # ========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دستور شروع"""
+    """نسخه اصلاح شده دستور شروع"""
     user_id = update.effective_user.id
     
     # دسترسی از طریق لینک دسته
@@ -443,6 +443,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     if bot_manager.is_admin(user_id):
+        # دریافت تایمر جهانی
+        global_timer = bot_manager.storage.global_timer
+        timer_status = f"{global_timer} ثانیه" if global_timer > 0 else "غیرفعال"
+        
         await update.message.reply_text(
             "👋 سلام ادمین!\n\n"
             "دستورات:\n"
@@ -453,7 +457,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/add_channel - افزودن کانال اجباری\n"
             "/remove_channel - حذف کانال\n"
             "/channels - لیست کانال‌ها\n"
-            f"/timer [زمان] - تنظیم تایمر جهانی (فعلی: {bot_manager.storage.global_timer} ثانیه)"
+            f"/timer [زمان] - تنظیم تایمر جهانی (فعلی: {timer_status})"
         )
     else:
         await update.message.reply_text("👋 سلام! برای دریافت فایل‌ها از لینک‌ها استفاده کنید.")
@@ -578,33 +582,38 @@ async def send_category_files(message: Message, context: ContextTypes.DEFAULT_TY
         await message.reply_text("❌ خطایی در ارسال فایل‌ها رخ داد")
 
 async def delete_messages_after_delay(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_ids: list, delay: int):
-    """حذف پیام‌ها پس از تاخیر مشخص"""
+    """نسخه اصلاح شده با مدیریت خطاهای بهتر"""
     try:
         remaining = delay
         while remaining > 0:
             await asyncio.sleep(min(10, remaining))
             remaining -= 10
             
-            # به‌روزرسانی پیام هشدار
-            if remaining > 0 and message_ids:
-                try:
+            try:
+                # به‌روزرسانی پیام هشدار
+                if message_ids:
                     await context.bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=message_ids[-1],
-                        text=f"⚠️ فایل‌ها بعد از {remaining} ثانیه به صورت خودکار حذف خواهند شد!\n"
-                             f"زمان باقیمانده: {remaining} ثانیه"
+                        text=f"⚠️ فایل‌ها بعد از {remaining} ثانیه حذف می‌شوند!\nزمان باقیمانده: {remaining} ثانیه"
                     )
-                except Exception:
-                    pass
-        
+            except Exception as e:
+                logger.warning(f"خطا در به‌روزرسانی تایمر: {e}")
+
         # حذف پیام‌ها
         for msg_id in message_ids:
             try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                await context.bot.delete_message(
+                    chat_id=chat_id,
+                    message_id=msg_id
+                )
             except Exception as e:
                 logger.warning(f"حذف پیام ناموفق: {e}")
+                
     except asyncio.CancelledError:
         logger.info("حذف پیام‌ها لغو شد")
+    except Exception as e:
+        logger.error(f"خطای غیرمنتظره در تایمر حذف: {e}")
 
 # ========================
 # ==== ADMIN COMMANDS ====
@@ -855,7 +864,7 @@ async def health_check(request):
     return web.Response(text="🤖 Telegram Bot is Running!")
 
 async def keep_alive():
-    """ارسال درخواست به health endpoint هر 5 دقیقه"""
+    """نسخه اصلاح شده تابع keep_alive"""
     while True:
         try:
             async with aiohttp.ClientSession() as session:
@@ -888,11 +897,10 @@ async def run_web_server():
 # ========================
 
 async def run_telegram_bot():
-    """اجرای اصلی ربات تلگرام"""
+    """اجرای اصلی ربات تلگرام - نسخه اصلاح شده"""
     application = Application.builder().token(BOT_TOKEN).build()
     
     # دریافت یوزرنیم ربات
-    await application.initialize()
     bot = await application.bot.get_me()
     bot_username = bot.username
     logger.info(f"Bot username: @{bot_username}")
@@ -939,27 +947,34 @@ async def run_telegram_bot():
     
     # اجرای ربات
     logger.info("Starting Telegram bot...")
+    await application.initialize()
     await application.start()
-    await application.updater.start_polling()
     
     # نگه داشتن ربات در حالت اجرا
-    while True:
-        await asyncio.sleep(3600)
+    async with application:
+        await application.updater.start_polling()
+        while True:
+            await asyncio.sleep(3600)
 
 async def main():
-    """اجرای همزمان سرور وب و ربات تلگرام"""
+    """تابع اصلی اجرا - نسخه اصلاح شده"""
+    # اجرای همزمان سرور وب و ربات تلگرام
     await asyncio.gather(
         run_web_server(),
-        run_telegram_bot(),
-        keep_alive()
+        run_telegram_bot()
     )
 
 if __name__ == '__main__':
+    # ایجاد یک event loop جدید
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
     try:
-        loop.run_until_complete(main())
+        # اجرای همزمان keep-alive و main
+        loop.run_until_complete(asyncio.gather(
+            keep_alive(),
+            main()
+        ))
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
