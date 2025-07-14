@@ -71,30 +71,39 @@ class ChannelStorage:
     async def load_global_timer(self):
         """بارگذاری تایمر جهانی از کانال ذخیره‌سازی"""
         for channel in self.channels:
-            async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
-                if message.text and "===== GLOBAL TIMER =====" in message.text:
-                    try:
-                        self.global_timer = int(message.text.split('\n')[1])
-                        return
-                    except (IndexError, ValueError):
-                        pass
+            try:
+                # دریافت تاریخچه چت با استفاده از روش صحیح PTB
+                messages = []
+                async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
+                    if message.text and "===== GLOBAL TIMER =====" in message.text:
+                        try:
+                            self.global_timer = int(message.text.split('\n')[1])
+                            return
+                        except (IndexError, ValueError):
+                            pass
+            except Exception as e:
+                logger.error(f"خطا در بارگذاری تایمر جهانی: {e}")
     
     async def load_category_timers(self):
         """بارگذاری تایمرهای اختصاصی دسته‌ها"""
         for channel in self.channels:
-            async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
-                if message.text and "===== META =====" in message.text:
-                    lines = message.text.split('\n')
-                    category_id = None
-                    
-                    for line in lines:
-                        if line.startswith("CATEGORY:"):
-                            category_id = line.split(':')[1]
-                        elif line.startswith("TIMER:") and category_id:
-                            try:
-                                self.category_timers[category_id] = int(line.split(':')[1])
-                            except ValueError:
-                                pass
+            try:
+                # دریافت تاریخچه چت با استفاده از روش صحیح PTB
+                async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
+                    if message.text and "===== META =====" in message.text:
+                        lines = message.text.split('\n')
+                        category_id = None
+                        
+                        for line in lines:
+                            if line.startswith("CATEGORY:"):
+                                category_id = line.split(':')[1]
+                            elif line.startswith("TIMER:") and category_id:
+                                try:
+                                    self.category_timers[category_id] = int(line.split(':')[1])
+                                except ValueError:
+                                    pass
+            except Exception as e:
+                logger.error(f"خطا در بارگذاری تایمرهای دسته: {e}")
     
     async def save_global_timer(self, seconds: int):
         """ذخیره تایمر جهانی در کانال ذخیره‌سازی"""
@@ -102,12 +111,12 @@ class ChannelStorage:
         
         # حذف تایمرهای قدیمی
         for channel in self.channels:
-            async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
-                if message.text and "===== GLOBAL TIMER =====" in message.text:
-                    await self.bot.delete_message(
-                        chat_id=channel,
-                        message_id=message.message_id
-                    )
+            try:
+                async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
+                    if message.text and "===== GLOBAL TIMER =====" in message.text:
+                        await message.delete()
+            except Exception as e:
+                logger.error(f"خطا در حذف تایمر قدیمی: {e}")
         
         # ذخیره تایمر جدید
         if self.channels:
@@ -122,51 +131,49 @@ class ChannelStorage:
         
         # پیدا کردن پیام دسته و به‌روزرسانی آن
         for channel in self.channels:
-            async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
-                if message.text and f"CATEGORY:{category_id}" in message.text:
-                    lines = message.text.split('\n')
-                    new_lines = []
-                    timer_found = False
-                    
-                    for line in lines:
-                        if line.startswith("TIMER:"):
-                            new_lines.append(f"TIMER:{seconds}")
-                            timer_found = True
-                        else:
-                            new_lines.append(line)
-                    
-                    if not timer_found:
-                        # اگر خط تایمر وجود نداشت، آن را اضافه کن
-                        for i, line in enumerate(new_lines):
-                            if line.startswith("CREATED_BY:"):
-                                new_lines.insert(i + 1, f"TIMER:{seconds}")
-                                break
-                    
-                    await self.bot.edit_message_text(
-                        chat_id=channel,
-                        message_id=message.message_id,
-                        text='\n'.join(new_lines)
-                    )
-                    return
-    
-    def get_category_timer(self, category_id: str) -> int:
-        """دریافت تایمر مناسب برای یک دسته"""
-        return self.category_timers.get(category_id, self.global_timer)
+            try:
+                async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
+                    if message.text and f"CATEGORY:{category_id}" in message.text:
+                        lines = message.text.split('\n')
+                        new_lines = []
+                        timer_found = False
+                        
+                        for line in lines:
+                            if line.startswith("TIMER:"):
+                                new_lines.append(f"TIMER:{seconds}")
+                                timer_found = True
+                            else:
+                                new_lines.append(line)
+                        
+                        if not timer_found:
+                            # اگر خط تایمر وجود نداشت، آن را اضافه کن
+                            for i, line in enumerate(new_lines):
+                                if line.startswith("CREATED_BY:"):
+                                    new_lines.insert(i + 1, f"TIMER:{seconds}")
+                                    break
+                        
+                        await message.edit_text('\n'.join(new_lines))
+                        return
+            except Exception as e:
+                logger.error(f"خطا در به‌روزرسانی تایمر دسته: {e}")
     
     async def _find_message_for_category(self, category_id: str = None):
         """پیدا کردن پیام مناسب برای دسته"""
         for channel in self.channels:
-            async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
-                if message.text and message.text.startswith("CATEGORIES_BLOCK:"):
-                    categories = message.text.split('\n')[1:]
-                    
-                    for i, cat_line in enumerate(categories):
-                        if cat_line.startswith(f"CATEGORY:{category_id}" if category_id else "CATEGORY:"):
-                            return message, i, channel
-                    
-                    # اگر پیام پیدا شد اما جای خالی دارد
-                    if len(categories) < self.categories_per_message:
-                        return message, len(categories), channel
+            try:
+                async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
+                    if message.text and message.text.startswith("CATEGORIES_BLOCK:"):
+                        categories = message.text.split('\n')[1:]
+                        
+                        for i, cat_line in enumerate(categories):
+                            if cat_line.startswith(f"CATEGORY:{category_id}" if category_id else "CATEGORY:"):
+                                return message, i, channel
+                        
+                        # اگر پیام پیدا شد اما جای خالی دارد
+                        if len(categories) < self.categories_per_message:
+                            return message, len(categories), channel
+            except Exception as e:
+                logger.error(f"خطا در جستجوی پیام دسته: {e}")
         
         return None, None, None
     
@@ -223,147 +230,148 @@ class ChannelStorage:
         """دریافت تمام دسته‌ها"""
         categories = {}
         for channel in self.channels:
-            async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
-                if message.text and message.text.startswith("CATEGORIES_BLOCK:"):
-                    for line in message.text.split('\n')[1:]:
-                        if line.startswith("CATEGORY:"):
-                            cat_id = line.split(':')[1]
-                            # خط بعدی نام دسته است
-                            name_line = message.text.split('\n')[message.text.split('\n').index(line) + 1]
-                            name = name_line.split(':')[1]
-                            categories[cat_id] = name
+            try:
+                async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
+                    if message.text and message.text.startswith("CATEGORIES_BLOCK:"):
+                        for line in message.text.split('\n')[1:]:
+                            if line.startswith("CATEGORY:"):
+                                cat_id = line.split(':')[1]
+                                # خط بعدی نام دسته است
+                                name_line = message.text.split('\n')[message.text.split('\n').index(line) + 1]
+                                name = name_line.split(':')[1]
+                                categories[cat_id] = name
+            except Exception as e:
+                logger.error(f"خطا در دریافت دسته‌ها: {e}")
         return categories
     
     async def get_category(self, category_id: str) -> dict:
         """دریافت اطلاعات یک دسته"""
         for channel in self.channels:
-            async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
-                if message.text and f"CATEGORY:{category_id}" in message.text:
-                    lines = message.text.split('\n')
-                    
-                    # پیدا کردن موقعیت دسته
-                    start_idx = None
-                    for i, line in enumerate(lines):
-                        if line.startswith(f"CATEGORY:{category_id}"):
-                            start_idx = i
-                            break
-                    
-                    if start_idx is None:
-                        continue
-                    
-                    # استخراج اطلاعات
-                    name = lines[start_idx + 1].split(':')[1]
-                    
-                    # استخراج تایمر اگر وجود دارد
-                    timer = self.global_timer
-                    if lines[start_idx + 2].startswith("TIMER:"):
-                        try:
-                            timer = int(lines[start_idx + 2].split(':')[1])
-                        except (IndexError, ValueError):
-                            pass
-                    
-                    files = []
-                    file_lines = lines[start_idx + 4:]  # خطوط بعد از FILES:
-                    for line in file_lines:
-                        if line and not line.startswith("CATEGORY:"):
-                            file_data = line.split('|')
-                            if len(file_data) >= 2:
-                                files.append({
-                                    'file_id': file_data[0],
-                                    'file_type': file_data[1],
-                                    'caption': file_data[2] if len(file_data) > 2 else ''
-                                })
-                        else:
-                            break
-                    
-                    return {
-                        'name': name,
-                        'timer': timer,
-                        'files': files
-                    }
+            try:
+                async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
+                    if message.text and f"CATEGORY:{category_id}" in message.text:
+                        lines = message.text.split('\n')
+                        
+                        # پیدا کردن موقعیت دسته
+                        start_idx = None
+                        for i, line in enumerate(lines):
+                            if line.startswith(f"CATEGORY:{category_id}"):
+                                start_idx = i
+                                break
+                        
+                        if start_idx is None:
+                            continue
+                        
+                        # استخراج اطلاعات
+                        name = lines[start_idx + 1].split(':')[1]
+                        
+                        # استخراج تایمر اگر وجود دارد
+                        timer = self.global_timer
+                        if lines[start_idx + 2].startswith("TIMER:"):
+                            try:
+                                timer = int(lines[start_idx + 2].split(':')[1])
+                            except (IndexError, ValueError):
+                                pass
+                        
+                        files = []
+                        file_lines = lines[start_idx + 4:]  # خطوط بعد از FILES:
+                        for line in file_lines:
+                            if line and not line.startswith("CATEGORY:"):
+                                file_data = line.split('|')
+                                if len(file_data) >= 2:
+                                    files.append({
+                                        'file_id': file_data[0],
+                                        'file_type': file_data[1],
+                                        'caption': file_data[2] if len(file_data) > 2 else ''
+                                    })
+                            else:
+                                break
+                        
+                        return {
+                            'name': name,
+                            'timer': timer,
+                            'files': files
+                        }
+            except Exception as e:
+                logger.error(f"خطا در دریافت اطلاعات دسته: {e}")
         return None
     
     async def add_file(self, category_id: str, file_info: dict) -> bool:
         """افزودن فایل به دسته"""
         for channel in self.channels:
-            async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
-                if message.text and f"CATEGORY:{category_id}" in message.text:
-                    lines = message.text.split('\n')
-                    
-                    # پیدا کردن موقعیت FILES: برای این دسته
-                    files_idx = None
-                    for i, line in enumerate(lines):
-                        if line.startswith(f"CATEGORY:{category_id}"):
-                            # پیدا کردن خط FILES: بعد از این دسته
-                            for j in range(i, len(lines)):
-                                if lines[j].startswith("FILES:"):
-                                    files_idx = j
-                                    break
-                            break
-                    
-                    if files_idx is None:
-                        continue
-                    
-                    # افزودن فایل جدید
-                    new_file_line = f"{file_info['file_id']}|{file_info['file_type']}|{file_info.get('caption', '')}"
-                    lines.insert(files_idx + 1, new_file_line)
-                    
-                    # بررسی اندازه پیام
-                    new_text = '\n'.join(lines)
-                    if len(new_text) > 4096:
-                        continue  # به پیام بعدی برو
-                    
-                    await self.bot.edit_message_text(
-                        chat_id=channel,
-                        message_id=message.message_id,
-                        text=new_text
-                    )
-                    return True
+            try:
+                async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
+                    if message.text and f"CATEGORY:{category_id}" in message.text:
+                        lines = message.text.split('\n')
+                        
+                        # پیدا کردن موقعیت FILES: برای این دسته
+                        files_idx = None
+                        for i, line in enumerate(lines):
+                            if line.startswith(f"CATEGORY:{category_id}"):
+                                # پیدا کردن خط FILES: بعد از این دسته
+                                for j in range(i, len(lines)):
+                                    if lines[j].startswith("FILES:"):
+                                        files_idx = j
+                                        break
+                                break
+                        
+                        if files_idx is None:
+                            continue
+                        
+                        # افزودن فایل جدید
+                        new_file_line = f"{file_info['file_id']}|{file_info['file_type']}|{file_info.get('caption', '')}"
+                        lines.insert(files_idx + 1, new_file_line)
+                        
+                        # بررسی اندازه پیام
+                        new_text = '\n'.join(lines)
+                        if len(new_text) > 4096:
+                            continue  # به پیام بعدی برو
+                        
+                        await message.edit_text(new_text)
+                        return True
+            except Exception as e:
+                logger.error(f"خطا در افزودن فایل: {e}")
         return False
     
     async def delete_category(self, category_id: str) -> bool:
         """حذف یک دسته"""
         for channel in self.channels:
-            async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
-                if message.text and f"CATEGORY:{category_id}" in message.text:
-                    lines = message.text.split('\n')
-                    
-                    # پیدا کردن محدوده خطوط این دسته
-                    start_idx = None
-                    end_idx = None
-                    for i, line in enumerate(lines):
-                        if line.startswith(f"CATEGORY:{category_id}"):
-                            start_idx = i
-                        elif start_idx is not None and i > start_idx and line.startswith("CATEGORY:"):
-                            end_idx = i
-                            break
-                    
-                    if start_idx is None:
-                        continue
-                    
-                    # حذف خطوط مربوط به این دسته
-                    if end_idx:
-                        del lines[start_idx:end_idx]
-                    else:
-                        del lines[start_idx:]
-                    
-                    # حذف تایمر از کش
-                    if category_id in self.category_timers:
-                        del self.category_timers[category_id]
-                    
-                    # اگر پیام خالی شد، آن را حذف کنید
-                    if len(lines) <= 1:  # فقط خط CATEGORIES_BLOCK: باقی مانده
-                        await self.bot.delete_message(
-                            chat_id=channel,
-                            message_id=message.message_id
-                        )
-                    else:
-                        await self.bot.edit_message_text(
-                            chat_id=channel,
-                            message_id=message.message_id,
-                            text='\n'.join(lines)
-                        )
-                    return True
+            try:
+                async for message in self.bot.get_chat_history(chat_id=channel, limit=100):
+                    if message.text and f"CATEGORY:{category_id}" in message.text:
+                        lines = message.text.split('\n')
+                        
+                        # پیدا کردن محدوده خطوط این دسته
+                        start_idx = None
+                        end_idx = None
+                        for i, line in enumerate(lines):
+                            if line.startswith(f"CATEGORY:{category_id}"):
+                                start_idx = i
+                            elif start_idx is not None and i > start_idx and line.startswith("CATEGORY:"):
+                                end_idx = i
+                                break
+                        
+                        if start_idx is None:
+                            continue
+                        
+                        # حذف خطوط مربوط به این دسته
+                        if end_idx:
+                            del lines[start_idx:end_idx]
+                        else:
+                            del lines[start_idx:]
+                        
+                        # حذف تایمر از کش
+                        if category_id in self.category_timers:
+                            del self.category_timers[category_id]
+                        
+                        # اگر پیام خالی شد، آن را حذف کنید
+                        if len(lines) <= 1:  # فقط خط CATEGORIES_BLOCK: باقی مانده
+                            await message.delete()
+                        else:
+                            await message.edit_text('\n'.join(lines))
+                        return True
+            except Exception as e:
+                logger.error(f"خطا در حذف دسته: {e}")
         return False
 
 class BotManager:
